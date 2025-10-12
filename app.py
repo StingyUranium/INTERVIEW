@@ -140,5 +140,10 @@ def get_token():
     return jsonify({'token': jwt})
 
 
+@app.route('/frontend')
+def frontend():
+    return render_template('frontend.html')
+
+
 if __name__ == "__main__":
     app.run(debug=True)

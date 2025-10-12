@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveKit Frontend</title>
+</head>
+<body>
+    <h1>LiveKit Frontend</h1>
+    <label for="identity">Identity:</label>
+    <input type="text" id="identity" name="identity" value="test-user">
+    <br>
+    <label for="room">Room:</label>
+    <input type="text" id="room" name="room" value="interview-room">
+    <br>
+    <button id="getToken">Get Token</button>
+    <br>
+    <textarea id="token" rows="10" cols="50"></textarea>
+
+    <script>
+        document.getElementById('getToken').addEventListener('click', () => {
+            const identity = document.getElementById('identity').value;
+            const room = document.getElementById('room').value;
+
+            fetch('/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    identity: identity,
+                    room: room
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('token').value = data.token;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('token').value = 'Error fetching token.';
+            });
+        });
+    </script>
+</body>
+</html>
