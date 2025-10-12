@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LiveKit Interview Assistant</title>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f0f2f5;
+      margin: 0;
+      padding: 2em;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 600px;
+      width: 100%;
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    h2 {
+      color: #1c1e21;
+      font-size: 1.75rem;
+    }
+    p {
+      font-size: 1.1em;
+      color: #555;
+    }
+    .card {
+      background-color: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+    }
+    .card-header {
+      padding: 1rem;
+      background-color: #e9ecef;
+      border-bottom: 1px solid #dee2e6;
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+    }
+    .card-header h3 {
+      margin: 0;
+      font-size: 1.2rem;
+      color: #495057;
+    }
+    .card-body {
+      padding: 1rem;
+    }
+    #status {
+      font-size: 1em;
+      color: #495057;
+      font-weight: 500;
+    }
+    .controls {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    button {
+      flex: 1;
+      padding: 0.8em;
+      font-size: 1.1em;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    #join-btn {
+      background-color: #007bff;
+      color: white;
+    }
+    #join-btn:hover {
+      background-color: #0056b3;
+    }
+    #leave-btn {
+      background-color: #dc3545;
+      color: white;
+    }
+    #leave-btn:hover {
+      background-color: #c82333;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    #transcript {
+      min-height: 100px;
+      background-color: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 1rem;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>🎙️ Interview Assistant</h2>
+      <p>Welcome, <strong id="username"></strong>!</p>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>Interview Status</h3>
+      </div>
+      <div class="card-body">
+        <div id="status">Waiting to connect...</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="join-btn">🎤 Start Interview</button>
+      <button id="leave-btn" disabled>⏹️ Leave Interview</button>
+    </div>
+
+    <div class="card" id="transcript-container" style="display: none;">
+      <div class="card-header">
+        <h3>Transcript</h3>
+      </div>
+      <div class="card-body" id="transcript">
+        <!-- Transcript will be populated here -->
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let room;
+    const usernameSpan = document.getElementById("username");
+    const joinBtn = document.getElementById("join-btn");
+    const leaveBtn = document.getElementById("leave-btn");
+    const statusDiv = document.getElementById("status");
+    const transcriptContainer = document.getElementById("transcript-container");
+    const transcriptDiv = document.getElementById("transcript");
+
+    const username = "{{ username }}";
+    const livekitUrl = "{{ livekit_url }}";
+    usernameSpan.innerText = username || "User";
+
+    // Join the LiveKit room
+    joinBtn.onclick = async () => {
+      if (!username) {
+        statusDiv.innerText = "Error: Username not provided.";
+        return;
+      }
+
+      statusDiv.innerText = "Fetching token...";
+      try {
+        // Fetch token from Flask backend
+        const res = await fetch('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identity: username,
+            room: 'interview-room'
+          })
+        });
+
+        const { token } = await res.json();
+        if (!token) {
+          statusDiv.innerText = "Failed to get token. Check server configuration.";
+          return;
+        }
+
+        // Connect to room
+        room = new LivekitClient.Room();
+        room.on('trackSubscribed', (track) => {
+          if (track.kind === 'audio') {
+            track.attach();
+          }
+        });
+
+        room.on('dataReceived', (payload, participant) => {
+          const text = new TextDecoder().decode(payload);
+          const p = document.createElement('p');
+          p.innerHTML = `<strong>${participant.identity}:</strong> ${text}`;
+          transcriptDiv.appendChild(p);
+          transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+        });
+
+        room.on('participantConnected', (participant) => {
+          statusDiv.innerText = `Connected! Interview started with ${participant.identity}.`;
+          transcriptContainer.style.display = "block";
+        });
+
+        room.on('disconnected', () => {
+          statusDiv.innerText = "Disconnected from interview.";
+          joinBtn.disabled = false;
+          leaveBtn.disabled = true;
+          transcriptContainer.style.display = "none";
+        });
+
+        await room.connect(livekitUrl, token);
+        joinBtn.disabled = true;
+        leaveBtn.disabled = false;
+
+        // Publish local microphone
+        const micTrack = await LivekitClient.createLocalAudioTrack();
+        await room.localParticipant.publishTrack(micTrack);
+        statusDiv.innerText = "Connected! Speak when ready.";
+      } catch (error) {
+        console.error("Connection failed:", error);
+        statusDiv.innerText = `Error: ${error.message || "Failed to connect."}`;
+      }
+    };
+
+    // Leave the room
+    leaveBtn.onclick = async () => {
+      if (room) {
+        await room.disconnect();
+        room = null;
+      }
+      statusDiv.innerText = "You left the interview.";
+      joinBtn.disabled = false;
+      leaveBtn.disabled = true;
+      transcriptContainer.style.display = "none";
+    };
+  </script>
+</body>
+</html>

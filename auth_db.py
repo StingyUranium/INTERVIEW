@@ -83,6 +83,14 @@ def main():
         else:
             print("Invalid choice. Try again.")
 
+def delete_users_table(db_path: Path = DB_PATH):
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS users")
+    conn.commit()
+    conn.close()
+    print("🗑️  'users' table deleted.")
 
 if __name__ == "__main__":
+    #delete_users_table() 
     main()

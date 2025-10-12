@@ -1,5 +1,9 @@
-from flask import Flask, render_template_string, request, redirect, url_for, flash
+from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify, render_template
 from auth_db import create_user, verify_user
+import os
+from livekit import api
+from dotenv import load_dotenv
+load_dotenv('.env.local')
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Replace with a random secret key
@@ -27,7 +31,6 @@ HTML_TEMPLATE = """
   </style>
 </head>
 <body>
-
   <div class="container">
     {% if mode == 'signup' %}
       <h2>Signup</h2>
@@ -57,14 +60,14 @@ HTML_TEMPLATE = """
       </div>
     {% endif %}
   </div>
-
 </body>
 </html>
 """
 
+# --- Routes ---
+
 @app.route('/')
 def home():
-    # Redirect to login page by default
     return redirect(url_for('login'))
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -91,9 +94,51 @@ def login():
         if verify_user(username, password):
             message = f"Welcome back, {username}!"
             success = True
+            return redirect(url_for('interview', username=username))
         else:
             message = "Invalid username or password."
     return render_template_string(HTML_TEMPLATE, mode='login', message=message, success=success)
+
+@app.route('/interview')
+def interview():
+    username = request.args.get('username')
+    if not username:
+        return redirect(url_for('login'))
+    
+    livekit_url = os.environ.get('LIVEKIT_URL')
+    if not livekit_url:
+        return jsonify({'error': 'LIVEKIT_URL not set in .env.local'}), 500
+
+    return render_template('index.html', username=username, livekit_url=livekit_url)
+
+@app.route('/token', methods=['POST'])
+def get_token():
+    data = request.json
+    identity = data.get('identity')
+    room = data.get('room', 'interview-room')
+
+    api_key = os.environ.get('LIVEKIT_API_KEY')
+    api_secret = os.environ.get('LIVEKIT_API_SECRET')
+
+    if not api_key or not api_secret:
+        return jsonify({'error': 'Server configuration missing'}), 500
+
+    token = (
+        api.AccessToken(api_key, api_secret)
+        .with_identity(identity)
+        .with_grants(
+            api.VideoGrants(
+                room=room,
+                room_join=True,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
+            )
+        )
+    )
+    jwt = token.to_jwt()
+    return jsonify({'token': jwt})
+
 
 if __name__ == "__main__":
     app.run(debug=True)
